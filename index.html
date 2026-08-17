@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ovseg — visor de predicciones</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.1/openseadragon.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>ovseg — visor de predicciones</h1>
+    <div id="controls">
+      <label>
+        Modelo (run)
+        <select id="run-select"></select>
+      </label>
+      <label>
+        Imagen
+        <select id="image-select"></select>
+      </label>
+      <label>
+        Opacidad de la predicción
+        <input type="range" id="opacity-slider" min="0" max="100" value="55">
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" id="overlay-toggle" checked>
+        Mostrar predicción
+      </label>
+    </div>
+  </header>
+
+  <div id="info-bar">
+    <span id="info-text">Cargando...</span>
+    <span id="legend"></span>
+  </div>
+
+  <div id="viewer"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
