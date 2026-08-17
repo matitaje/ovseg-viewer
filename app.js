@@ -74,6 +74,27 @@ function renderLegend(classLabels) {
   }
 }
 
+// Construye el tileSource "a mano" (sin fetch de un .dzi) -- ver notas en
+// generate_viewer_tiles.py: un .dzi cacheado sin CORS por el CDN de GCS no se
+// arregla actualizando metadata, solo esperando su TTL original. Como el layout de
+// tiles es el estándar DeepZoom (mismo que pyvips.dzsave produce), alcanza con
+// saber ancho/alto para reconstruirlo -- ver docs de OpenSeadragon, "Custom Tile
+// Source": cualquier objeto con estas propiedades sirve, no hace falta la clase
+// DziTileSource ni fetchear XML.
+function makeTileSource(filesUrl, width, height, tileSize, overlap, extension) {
+  return {
+    width,
+    height,
+    tileSize,
+    tileOverlap: overlap,
+    minLevel: 0,
+    maxLevel: Math.ceil(Math.log2(Math.max(width, height))),
+    getTileUrl: function (level, x, y) {
+      return `${filesUrl}/${level}/${x}_${y}.${extension}`;
+    },
+  };
+}
+
 function loadEntry() {
   const entry = currentEntry();
   if (!entry) return;
@@ -86,10 +107,13 @@ function loadEntry() {
     viewer = null;
   }
 
+  const baseSource = makeTileSource(gcsUrl(entry.base_files), entry.width, entry.height, entry.tile_size, entry.overlap, "jpg");
+  const overlaySource = makeTileSource(gcsUrl(entry.overlay_files), entry.width, entry.height, entry.tile_size, entry.overlap, "png");
+
   viewer = OpenSeadragon({
     id: "viewer",
     prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.1/images/",
-    tileSources: [gcsUrl(entry.base_dzi)],
+    tileSources: [baseSource],
     showNavigator: true,
     navigatorPosition: "BOTTOM_RIGHT",
     animationTime: 0.4,
@@ -98,7 +122,7 @@ function loadEntry() {
 
   viewer.addHandler("open", () => {
     viewer.addTiledImage({
-      tileSource: gcsUrl(entry.overlay_dzi),
+      tileSource: overlaySource,
       opacity: overlayToggle.checked ? opacitySlider.value / 100 : 0,
       index: 1,
     });
