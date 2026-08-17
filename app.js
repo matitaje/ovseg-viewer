@@ -19,7 +19,11 @@ const infoText = document.getElementById("info-text");
 const legendEl = document.getElementById("legend");
 
 async function loadManifest() {
-  const res = await fetch(gcsUrl("manifest.json"), { cache: "no-store" });
+  // Cache-busting query param: GCS/CDN edge caching happens server-side and isn't
+  // affected by fetch's own {cache: "no-store"} (that only controls the browser's
+  // local cache) -- found in practice, a CORS config change took ~17 min to actually
+  // show up because the old (no-CORS-header) response was still being served from cache.
+  const res = await fetch(`${gcsUrl("manifest.json")}?t=${Date.now()}`, { cache: "no-store" });
   if (!res.ok) {
     infoText.textContent = `No se pudo cargar manifest.json (HTTP ${res.status}). ¿El bucket es público?`;
     throw new Error(`manifest fetch failed: ${res.status}`);
