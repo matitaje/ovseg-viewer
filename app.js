@@ -15,8 +15,25 @@ const runSelect = document.getElementById("run-select");
 const imageSelect = document.getElementById("image-select");
 const opacitySlider = document.getElementById("opacity-slider");
 const overlayToggle = document.getElementById("overlay-toggle");
+const rawToggle = document.getElementById("raw-toggle");
+const rawLabel = document.getElementById("raw-label");
+const copyLinkButton = document.getElementById("copy-link");
 const infoText = document.getElementById("info-text");
 const legendEl = document.getElementById("legend");
+
+// Run e imagen viajan en el hash de la URL, para que un link compartido abra exactamente
+// lo que el que lo mandó estaba mirando en vez del primer run y la primera imagen.
+function readLocation() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  return { run: params.get("run"), stem: params.get("img") };
+}
+
+function writeLocation() {
+  const params = new URLSearchParams({ run: runSelect.value, img: imageSelect.value });
+  // replaceState, no location.hash = ...: cambiar el hash directamente agrega una entrada
+  // al historial por cada cambio de imagen, y el botón de atrás queda inutilizable.
+  history.replaceState(null, "", `${location.pathname}#${params}`);
+}
 
 async function loadManifest() {
   // Cache-busting query param: GCS/CDN edge caching happens server-side and isn't
@@ -98,22 +115,27 @@ function makeTileSource(filesUrl, width, height, tileSize, overlap, extension) {
 function loadEntry() {
   const entry = currentEntry();
   if (!entry) return;
+  writeLocation();
 
   infoText.textContent = `Paciente ${entry.patient_id} — ${entry.stem} — modelo ${runSelect.value}`;
   renderLegend(entry.class_labels);
+  // La máscara previa al postproceso solo existe en runs que la guardaron.
+  rawLabel.hidden = !entry.overlay_raw_files;
+  if (!entry.overlay_raw_files) rawToggle.checked = false;
 
   if (viewer) {
     viewer.destroy();
     viewer = null;
   }
 
-  const baseSource = makeTileSource(gcsUrl(entry.base_files), entry.width, entry.height, entry.tile_size, entry.overlap, "jpg");
-  const overlaySource = makeTileSource(gcsUrl(entry.overlay_files), entry.width, entry.height, entry.tile_size, entry.overlap, "png");
+  const source = (files, ext) =>
+    makeTileSource(gcsUrl(files), entry.width, entry.height, entry.tile_size, entry.overlap, ext);
+  const overlays = [entry.overlay_files, entry.overlay_raw_files].filter(Boolean);
 
   viewer = OpenSeadragon({
     id: "viewer",
     prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.1/images/",
-    tileSources: [baseSource],
+    tileSources: [source(entry.base_files, "jpg")],
     showNavigator: true,
     navigatorPosition: "BOTTOM_RIGHT",
     animationTime: 0.4,
@@ -121,18 +143,25 @@ function loadEntry() {
   });
 
   viewer.addHandler("open", () => {
-    viewer.addTiledImage({
-      tileSource: overlaySource,
-      opacity: overlayToggle.checked ? opacitySlider.value / 100 : 0,
-      index: 1,
+    overlays.forEach((files, i) => {
+      viewer.addTiledImage({ tileSource: source(files, "png"), opacity: 0, index: i + 1 });
     });
+    // Las capas se agregan de forma asíncrona; recién cuando están todas se puede
+    // decidir cuál mostrar.
+    viewer.world.addHandler("add-item", updateOverlayOpacity);
+    updateOverlayOpacity();
   });
 }
 
+// Con y sin postproceso son la misma predicción, así que se muestran de a una: la
+// diferencia entre ambas es justamente lo que borró la limpieza de islas.
 function updateOverlayOpacity() {
-  if (!viewer || viewer.world.getItemCount() < 2) return;
-  const overlay = viewer.world.getItemAt(1);
-  overlay.setOpacity(overlayToggle.checked ? opacitySlider.value / 100 : 0);
+  if (!viewer) return;
+  const opacity = overlayToggle.checked ? opacitySlider.value / 100 : 0;
+  const wanted = rawToggle.checked && !rawLabel.hidden ? 2 : 1;
+  for (let i = 1; i < viewer.world.getItemCount(); i++) {
+    viewer.world.getItemAt(i).setOpacity(i === wanted ? opacity : 0);
+  }
 }
 
 runSelect.addEventListener("change", () => {
@@ -142,13 +171,68 @@ runSelect.addEventListener("change", () => {
 imageSelect.addEventListener("change", loadEntry);
 opacitySlider.addEventListener("input", updateOverlayOpacity);
 overlayToggle.addEventListener("change", updateOverlayOpacity);
+rawToggle.addEventListener("change", updateOverlayOpacity);
+copyLinkButton.addEventListener("click", async () => {
+  await navigator.clipboard.writeText(location.href);
+  copyLinkButton.textContent = "¡Copiado!";
+  setTimeout(() => (copyLinkButton.textContent = "Copiar link"), 1500);
+});
+// Pegar un link con otro hash en la misma pestaña no recarga la página.
+window.addEventListener("hashchange", () => {
+  const { run, stem } = readLocation();
+  if (run && run !== runSelect.value) {
+    runSelect.value = run;
+    populateImages(run);
+  }
+  if (stem && stem !== imageSelect.value) imageSelect.value = stem;
+  loadEntry();
+});
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Pantalla de clave (ver config.js: barrera débil a propósito, el bucket sigue público).
+// La sesión se recuerda mientras la pestaña viva, para no pedirla en cada recarga.
+function unlock() {
+  const expected = VIEWER_CONFIG.passwordSha256;
+  if (!expected || sessionStorage.getItem("ovseg-viewer-unlocked") === expected) return Promise.resolve();
+  const gate = document.getElementById("gate");
+  const form = document.getElementById("gate-form");
+  const input = document.getElementById("gate-input");
+  const error = document.getElementById("gate-error");
+  gate.hidden = false;
+  return new Promise((resolve) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if ((await sha256Hex(input.value)) !== expected) {
+        error.hidden = false;
+        input.select();
+        return;
+      }
+      try {
+        sessionStorage.setItem("ovseg-viewer-unlocked", expected);
+      } catch (err) {
+        console.warn("sessionStorage no disponible, se pedirá la clave de nuevo", err);
+      }
+      gate.hidden = true;
+      resolve();
+    });
+  });
+}
 
 (async function init() {
   try {
+    await unlock();
     await loadManifest();
     populateRuns();
+    const wanted = readLocation();
+    if (wanted.run && manifest.runs[wanted.run]) runSelect.value = wanted.run;
     if (runSelect.value) {
       populateImages(runSelect.value);
+      const images = manifest.runs[runSelect.value].images || [];
+      if (wanted.stem && images.some((e) => e.stem === wanted.stem)) imageSelect.value = wanted.stem;
       loadEntry();
     } else {
       infoText.textContent = "No hay runs en el manifest todavía.";

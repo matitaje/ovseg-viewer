@@ -8,6 +8,17 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="gate" hidden>
+    <form id="gate-form">
+      <h2>ovseg — visor de predicciones</h2>
+      <label>Clave de acceso
+        <input type="password" id="gate-input" autocomplete="current-password" autofocus>
+      </label>
+      <button type="submit">Entrar</button>
+      <p id="gate-error" hidden>Clave incorrecta.</p>
+    </form>
+  </div>
+
   <header>
     <h1>ovseg — visor de predicciones</h1>
     <div id="controls">
@@ -27,6 +38,11 @@
         <input type="checkbox" id="overlay-toggle" checked>
         Mostrar predicción
       </label>
+      <label class="checkbox" id="raw-label" hidden>
+        <input type="checkbox" id="raw-toggle">
+        Sin postproceso
+      </label>
+      <button type="button" id="copy-link">Copiar link</button>
     </div>
   </header>
 

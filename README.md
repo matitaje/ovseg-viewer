@@ -18,10 +18,13 @@ del repo principal.
   y otra del overlay de predicción coloreado semi-transparente (`overlay.dzi` +
   `overlay_files/`) — mismo esquema de color que el resto del proyecto (Tumor rojo,
   Stroma verde, NoTissue naranja, Background gris).
-- El overlay se resuelve rasterizando el GeoJSON que cada training run ya guarda como
-  subproducto (respeta el orden de prioridad correcto entre clases superpuestas) — no
-  es una reconstrucción de polígonos ambigua como se ve al abrir el mismo GeoJSON en
-  QuPath.
+- El overlay se genera a partir de `pred_masks/<stem>.png`, la máscara cruda de
+  predicción que `train.py` ya guarda como subproducto de cada run (mismo array que
+  usa wandb para las `test_predictions`) — no requiere volver a correr el modelo.
+  No usa el GeoJSON simplificado (`pseudo_geojson/`, que cada run también guarda) como
+  fuente: ese GeoJSON existe para revisión/edición en QuPath, pero al simplificar
+  polígonos (filtra regiones chicas, no encodea huecos) pierde detalle que sí está en
+  la máscara cruda.
 - `app.js` arma los selectores de run/imagen a partir del manifest, y controla opacidad
   del overlay con un slider.
 
@@ -32,18 +35,20 @@ configuración — es una página estática.
 
 ## Generar/actualizar los tiles de un run
 
-Desde el repo principal (`ovseg-ovarian-segmentation`):
+`scripts/generate_viewer_tiles.py` solo decodifica un PNG y tilea con `pyvips` — no
+necesita `torch` ni GPU, así que corre en la imagen liviana de dataprep (CPU-only)
+como Vertex AI job. Desde el repo principal (`ovseg-ovarian-segmentation`):
 
 ```bash
-docker build -f docker/Dockerfile.dataprep -t ovseg-dataprep .
-docker run --rm \
-  -v ~/.config/gcloud:/root/.config/gcloud \
-  -v "$(pwd)/src:/app/src:ro" -v "$(pwd)/scripts:/app/scripts:ro" \
-  --entrypoint python ovseg-dataprep scripts/generate_viewer_tiles.py --run-id runNNN
+gcloud ai custom-jobs create --region=europe-west4 --project=digitalanalysis-ai \
+  --display-name=ovseg-viewer-tiles-runNNN \
+  --config=configs/vertex_jobs/generate_viewer_tiles.yaml
 ```
 
-Requiere que `runNNN` ya haya terminado de entrenar (necesita el `pseudo_geojson/` que
-`train.py` sube como subproducto al finalizar).
+Editar `--run-id` dentro del yaml para apuntar al run deseado. Requiere que `runNNN`
+ya haya terminado de entrenar y haya subido `pred_masks/` (agregado a partir de
+run018 -- runs anteriores solo tienen `pseudo_geojson/` y necesitarían la versión
+anterior del script, que sí re-corría inferencia).
 
 ## Deploy
 

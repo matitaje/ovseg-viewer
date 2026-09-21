@@ -47,6 +47,10 @@ label.checkbox {
   gap: 6px;
 }
 
+/* Sin esto, el atributo hidden no hace nada sobre los elementos a los que este archivo
+   les da un display explícito (la regla de autor le gana a la del user-agent). */
+[hidden] { display: none !important; }
+
 select, input[type="range"] {
   font-size: 13px;
 }
@@ -93,3 +97,47 @@ select {
   flex: 1;
   background: #000;
 }
+
+button {
+  font-size: 13px;
+  padding: 5px 10px;
+  background: #222;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:hover { background: #2c2c2c; }
+
+#gate {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: #111;
+  display: grid;
+  place-items: center;
+}
+
+#gate[hidden] { display: none; }
+
+#gate form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(320px, 90vw);
+}
+
+#gate h2 { margin: 0 0 4px; font-size: 16px; color: #fafafa; }
+
+#gate input {
+  padding: 8px;
+  font-size: 14px;
+  background: #222;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 4px;
+}
+
+#gate-error { color: #ff8080; font-size: 13px; margin: 0; }
+#gate-error[hidden] { display: none; }
